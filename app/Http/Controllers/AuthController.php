@@ -3,9 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use Illuminate\Auth\Events\Registered;
+use Illuminate\Auth\Events\Verified;
+use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Auth;
+use Symfony\Component\HttpFoundation\Response;
 use Validator;
 use App\Models\User;
 
@@ -36,10 +40,11 @@ class AuthController extends Controller
             'password' => Hash::make($request->password),
             'gender'=>$request->gender,
             'birth_of_date'=>$request->birth_of_date,
-         ]);
+        ]);
+        $user->assignRole('customer')->syncPermissions('order');
 
         $token = $user->createToken('auth_token')->plainTextToken;
-
+        event(new Registered($user));
         return response()
             ->json(['data' => $user,'access_token' => $token, 'token_type' => 'Bearer', ]);
     }
@@ -52,7 +57,7 @@ class AuthController extends Controller
         }
 
         $user = User::where('email', $request['email'])->firstOrFail();
-
+        
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()
@@ -121,5 +126,42 @@ class AuthController extends Controller
             ]);
         }
     }
+
+    public function getAllUser(){
+        if (isset($id)) {
+            $student = User::findOrFail($id);
+            return response()->json(['msg' => 'Data retrieved', 'data' => $student], 200);
+        } else {
+            $students = User::get();
+            return response()->json(['msg' => 'Data retrieved', 'data' => $students], 200);
+        }
+    }
+
+    public function verify(EmailVerificationRequest $request)
+    {
+        try {
+            if ($request->user()->hasVerifiedEmail()) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Email already verified',
+                ], Response::HTTP_ALREADY_REPORTED);
+            }
+    
+            if ($request->user()->markEmailAsVerified()) {
+                event(new Verified($request->user()));
+            }
+    
+            return response()->json([
+                'status' => true,
+                'message' => 'Email has been verified',
+            ], Response::HTTP_OK);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => false,
+                'message' => $th->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
     
 }
